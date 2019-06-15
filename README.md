@@ -32,7 +32,7 @@ ALTER TABLE wind_farms
   USING ST_Transform(geom,2163);
 ```
 Here, we use US National Atlas Equal Area coordinate system, whose spatial reference code is 2163.<br><br>
-We note that in the table, some rows has no generation data. We want to remove these rows. Also, because very small wind farms are often used for research purposes or not professionally maintained, we want to filter out wind farms below a certain capacity. We want to keep the rows whose capacity is now less than than the 10th percentile of capacity. Additionally, we want to calculate the effiency based on the capacity and generation in this step. After this step, we will get a clean dataset.
+We note that in the table, some rows has no generation data. We want to remove these rows. Also, because very small wind farms are often used for research purposes or not professionally maintained, we want to filter out wind farms below a certain capacity. We want to keep the rows whose capacity is now less than than the 10th percentile of capacity. Additionally, we want to calculate the effiency based on the capacity and generation in this step. After this step, we will get a temporary table "wftemp".
 ```
 CREATE TEMP TABLE wftemp AS (SELECT *, 
 CAST(CASE WHEN generation = 'NA' THEN '0'
@@ -42,19 +42,26 @@ WHERE capacitymw>=(SELECT PERCENTILE_DISC(0.1) WITHIN GROUP (ORDER BY wind_farms
 							 AND generation!= 'NA')
 ```
 Let's move to the most important step. In this step, we want to:<br>
-- Create the buffer of each wind farm in the clean dataset. <br>
+- Create the buffer of each wind farm in "wftemp". <br>
 - Spatial join the wind farms and the buffers to find all wind farms falling within each buffer.<br>
 - We have to note that each wind farm will join the buffer of itself. So, we want to remove the rows who represents this "self join".<br>
+- Then, want to aggregate the data to get the average efficiency of wind farms falling into each buffer, and join the the results to the temporary table "wftemp".<br>
+- Find the rows whose efficiency lower than the regional average (avg_efficiency) and label them.
 ```
-CREATE TEMP TABLE final_wf AS (SELECT *, (CASE WHEN efficiency < avg_efficiency THEN “No”
-ELSE “Yes” END) AS inefficient FROM wftemp 
+CREATE TABLE final_wf AS (SELECT *, (CASE WHEN efficiency < avg_efficiency THEN 'No'
+ELSE 'Yes' END) AS inefficient FROM wftemp 
 JOIN (
-SELECT buffer_id, AVG(efficiency) AS avg_efficiency FROM (SELECT wftemp.ID, wftemp.efficiency, buffer_id, buffer_efficiency FROM wftemp 
+SELECT buffer_id, AVG(efficiency) AS avg_efficiency FROM (SELECT wftemp.ID, wftemp.efficiency, buffer_id FROM wftemp 
 JOIN(
-	SELECT ID AS buffer_id, efficiency AS buffer_efficiency, ST_Buffer(geom, 100000)::geometry(Polygon,2163) AS geom
+	SELECT ID AS buffer_id, ST_Buffer(geom, 100000)::geometry(Polygon,2163) AS geom
 FROM wftemp) buffer
 ON ST_Within(wftemp.geom, buffer.geom)
 WHERE ID != buffer_id) temp2
 GROUP BY buffer_id) temp2_agg
 ON wftemp.ID = temp2_agg.buffer_id)
 ```
+Now, we get the results. Export the data to csv and move to the next part.
+
+## 2. Web Application
+We can build the web application via ArcGIS online, which can be viewed at:
+https://www.arcgis.com/apps/StoryMapBasic/index.html?appid=8d30efe1fab9406ca8eb8358b3db6de4
