@@ -49,7 +49,7 @@ Let's move to the most important step. In this step, we want to:<br>
 - Find the rows whose efficiency lower than the regional average (avg_efficiency) and label them.
 ```
 CREATE TABLE final_wf AS (SELECT *, (CASE WHEN efficiency < avg_efficiency THEN 'No'
-ELSE 'Yes' END) AS inefficient FROM wftemp 
+ELSE 'Yes' END) AS isefficient FROM wftemp 
 JOIN (
 SELECT buffer_id, AVG(efficiency) AS avg_efficiency FROM (SELECT wftemp.ID, wftemp.efficiency, buffer_id FROM wftemp 
 JOIN(
